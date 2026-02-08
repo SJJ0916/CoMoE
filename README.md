@@ -4,9 +4,7 @@
 Official PyTorch implementation of the paper CoMoE: Collaboration Mixture-of-Experts for Text-based Person Retrieval.
 
 ## Updates
-- 🔴 ***<ins>[(1/13/2026) Checking and Correction](https://github.com/Tedysu0916/php_V1/tree/main/Checking_and_Correction)</ins>***
-- (12/31/2025) Revision V2 Code released!
-- (9/28/2025) Revision V1 Code released!
+- (2/9/2026) Code released!
 
 
 
