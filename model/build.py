@@ -11,35 +11,6 @@ from collections import OrderedDict
 from torch.nn.functional import cosine_similarity
 
 
-class SFM(nn.Module):
-    def __init__(self, dim=512, tokens=6, drop_p=0.3):
-        super().__init__()
-        self.part_num = tokens
-        self.queries = nn.Parameter(torch.randn(tokens, dim) * 0.02)
-
-        self.mlp = nn.Sequential(
-            nn.LayerNorm(dim),
-            nn.Linear(dim, dim * 4),
-            nn.GELU(),
-            nn.Dropout(drop_p),
-            nn.Linear(dim * 4, dim),
-        )
-        self.scale = dim ** -0.5
-
-    def forward(self, x):
-        batch = x.shape[0]
-        dtype = x.dtype
-
-        attn = torch.matmul(
-            self.queries.to(dtype).unsqueeze(0).expand(batch, -1, -1),
-            x.transpose(-1, -2)
-        )
-        attn = (attn * self.scale).softmax(dim=-1)
-        out = torch.matmul(attn, x)
-        mlp_out = self.mlp(out.float())
-        out = out + mlp_out.to(dtype)
-        return out
-
 class IRRA(nn.Module):
     def __init__(self, args, num_classes=11003):
         super().__init__()
@@ -66,18 +37,6 @@ class IRRA(nn.Module):
                 nn.init.zeros_(self.STransformer.resblocks[i].feed_forward.experts[j].down.bias)
                 nn.init.zeros_(self.STransformer.resblocks[i].feed_forward.experts[j].up.weight)
                 nn.init.zeros_(self.STransformer.resblocks[i].feed_forward.experts[j].up.bias)
-
-        # self.STransformer = Transformer(width=self.embed_dim, layers=args.cmt_depth, heads=self.embed_dim // 64)
-        # self.STransformer = STransformer(self.embed_dim, layers, heads, attn_mask=None, reduction=args.reduction)
-        # scale = self.STransformer.width ** -0.5
-        # proj_std = scale * ((2 * self.STransformer.layers) ** -0.5)
-        # attn_std = scale
-        # fc_std = (2 * self.STransformer.width) ** -0.5
-        # for block in self.STransformer.resblocks:
-        #     nn.init.normal_(block.attn.in_proj_weight, std=attn_std)
-        #     nn.init.normal_(block.attn.out_proj.weight, std=proj_std)
-        #     nn.init.normal_(block.mlp.c_fc.weight, std=fc_std)
-        #     nn.init.normal_(block.mlp.c_proj.weight, std=proj_std)
 
         if 'id' in args.loss_names:
             self.classifier = nn.Linear(self.embed_dim, self.num_classes)
@@ -142,24 +101,6 @@ class IRRA(nn.Module):
         x = self.ln_post(x)
         return x
 
-    def encode_image(self, image):
-        x = self.base_model.encode_image(image)
-        safl_image_feats = self.SFM(x[:, 1:, :])
-        safl_image_feats,_ = self.shared_transformer(safl_image_feats,0)
-        i_feats = x[:, 0, :].float()
-        safl_i_feats = torch.mean(safl_image_feats, dim=1)
-        i_feats = safl_i_feats + i_feats
-        return i_feats
-
-    def encode_text(self, text):
-        x = self.base_model.encode_text(text)
-        safl_text_feats = self.SFM(x)
-        safl_text_feats,_ = self.shared_transformer(safl_text_feats,0)
-        t_feats = x[torch.arange(x.shape[0]), text.argmax(dim=-1)].float()
-        safl_t_feats = torch.mean(safl_text_feats, dim=1)
-        t_feats = safl_t_feats + t_feats
-        return t_feats
-
     def encode_image_base(self, image):
         x = self.base_model.encode_image(image)
         return x[:, 0, :].float()
@@ -198,9 +139,6 @@ class IRRA(nn.Module):
         image_feats, text_feats = self.base_model(images, caption_ids)
         g_v  = image_feats[:, 0, :].float()
         g_t = text_feats[torch.arange(text_feats.shape[0]), caption_ids.argmax(dim=-1)].float()
-
-        # safl_image_feats = self.SFM(image_feats[:, 1:, :])
-        # safl_text_feats = self.SFM(text_feats)
 
         S_image_feats, l_aux_img = self.STransformer(image_feats[:, 1:, :], l_aux=0.0, is_text=False)
         S_text_feats, l_aux_txt = self.STransformer(text_feats, l_aux=0.0, is_text=True)
